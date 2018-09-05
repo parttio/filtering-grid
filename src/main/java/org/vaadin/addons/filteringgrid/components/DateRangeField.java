@@ -37,6 +37,10 @@ public class DateRangeField extends CustomComponent implements
         public void setDateTo(LocalDate dateTo) {
             this.dateTo = dateTo;
         }
+        
+        public boolean isNull() {
+            return dateFrom == null && dateTo == null;
+        }
     }
 
     private final HorizontalLayout container;
@@ -52,10 +56,10 @@ public class DateRangeField extends CustomComponent implements
                 dateFieldTo);
         setCompositionRoot(container);
 
-        dateFieldFrom.addValueChangeListener(event -> setValue(new DateRange
-                (event.getValue(), dateFieldTo.getValue())));
-        dateFieldTo.addValueChangeListener(event -> setValue(new DateRange
-                (dateFieldFrom.getValue(), event.getValue())));
+        dateFieldFrom.addValueChangeListener(event -> internalSetValue(new DateRange
+                (event.getValue(), dateFieldTo.getValue()), event.isUserOriginated()));
+        dateFieldTo.addValueChangeListener(event -> internalSetValue(new DateRange
+                (dateFieldFrom.getValue(), event.getValue()), event.isUserOriginated()));
 
         setStyleName("v-daterangefield");
     }
@@ -67,8 +71,13 @@ public class DateRangeField extends CustomComponent implements
 
     @Override
     public void setValue(DateRange value) {
+        internalSetValue(value, false);
+    }
+    
+    
+    private void internalSetValue(DateRange value, boolean userOriginated) {
+        DateRange oldValue = this.value;
         this.value = value;
-
         if (value != null && !value.equals(getEmptyValue())) {
             dateFieldFrom.setValue(value.dateFrom);
             dateFieldTo.setValue(value.dateTo);
@@ -76,6 +85,7 @@ public class DateRangeField extends CustomComponent implements
             dateFieldFrom.clear();
             dateFieldTo.clear();
         }
+        fireEvent(new ValueChangeEvent<DateRange>(this, oldValue, userOriginated));
     }
 
     @Override

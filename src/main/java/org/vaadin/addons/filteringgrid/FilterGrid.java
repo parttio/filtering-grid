@@ -11,15 +11,18 @@ import java.util.stream.Stream;
 
 import org.vaadin.addons.filteringgrid.filters.Filter;
 import org.vaadin.addons.filteringgrid.filters.FilterCollection;
+import org.vaadin.addons.filteringgrid.filters.FilterComponentWrapper;
 import org.vaadin.addons.filteringgrid.filters.InMemoryFilter;
 
-import com.vaadin.annotations.StyleSheet;
+import com.vaadin.data.BeanPropertySet;
 import com.vaadin.data.Binder.Binding;
 import com.vaadin.data.HasValue;
+import com.vaadin.data.PropertyDefinition;
 import com.vaadin.data.ValueProvider;
 import com.vaadin.data.provider.CallbackDataProvider;
 import com.vaadin.data.provider.DataProvider;
 import com.vaadin.data.provider.InMemoryDataProvider;
+import com.vaadin.data.provider.ListDataProvider;
 import com.vaadin.data.provider.QuerySortOrder;
 import com.vaadin.server.SerializableBiPredicate;
 import com.vaadin.server.SerializableComparator;
@@ -97,6 +100,9 @@ public class FilterGrid<T> extends Grid<T> {
 
         private SerializableFunction<T, V> filterValueProvider = t ->
                 getValueProvider().apply(t);
+
+        private Class<?> valueType;
+
 
         protected Column(ValueProvider<T, V> valueProvider,
                 Renderer<? super V> renderer) {
@@ -323,8 +329,45 @@ public class FilterGrid<T> extends Grid<T> {
         @Override
         @SuppressWarnings("unchecked")
         protected FilterGrid<T> getGrid() {
-            return (FilterGrid) super.getGrid();
+            return (FilterGrid<T>) super.getGrid();
         }
+
+        /**
+         * Gets the value type of the column. If bean type scanning has been used, it is automatically detected from
+         *  the bean type
+         * @return
+         */
+        public Class<?> getValueType() {
+            if (valueType != null) return valueType;
+            if (getGrid().getBeanType() == null || getId() == null) {
+                return null;
+            }
+            PropertyDefinition<T, ?> property = BeanPropertySet.get(getGrid().getBeanType()).getProperty(getId()).orElse(null);
+            return property == null ? null : property.getType();
+            
+        }
+
+        /**
+         * Explicitly sets value type for the column
+         * @param valueClass
+         * @return
+         */
+        public Column<T, V> setValueType(Class<?> valueClass) {
+            this.valueType = valueClass;
+            return this;
+        }
+        
+        /**
+         * Sets a value to the filter component
+         * @param value
+         */
+        public void setFilterValue(V value) {
+            Component filterComponent = getGrid().getFilterComponent(this);
+            if (filterComponent != null && filterComponent instanceof HasValue<?>) {
+                ((HasValue<V>)filterComponent).setValue(value);
+            }
+        }
+        
     }
 
     @SuppressWarnings("unchecked")
@@ -339,6 +382,13 @@ public class FilterGrid<T> extends Grid<T> {
     private final Map<Filter<?>, Registration> filterRegistrations = new HashMap<>();
 
     private HeaderRow filterHeader;
+    
+    private FilterGenerator filterGenerator;
+    
+    private FilterDecorator filterDecorator;
+    
+    private ListDataProvider<T> listDataProvider;
+
 
     /**
      * Creates a new filtering grid without support for creating columns based
@@ -422,8 +472,8 @@ public class FilterGrid<T> extends Grid<T> {
 
     @Override
     public void setItems(Collection<T> items) {
-        internalSetDataProvider(DataProvider.ofCollection(items)
-                .withConvertedFilter(filterConverter), filters);
+        listDataProvider = DataProvider.ofCollection(items); 
+        internalSetDataProvider(listDataProvider.withConvertedFilter(filterConverter), filters);
     }
 
     private <C extends Filter<?> & Component> void addFilter(C filter,
@@ -535,7 +585,7 @@ public class FilterGrid<T> extends Grid<T> {
     }
 
     private <C extends Filter<?> & Component> void updateFilterHeader(
-            Column column, C filter) {
+            Column<?,?> column, C filter) {
         if (!columnFilters.isEmpty()) {
             if (filterHeader == null) {
                 filterHeader = appendHeaderRow();
@@ -546,4 +596,75 @@ public class FilterGrid<T> extends Grid<T> {
             removeHeaderRow(filterHeader);
         }
     }
+    
+    /**
+     * clears all filters
+     */
+    public void clearFilters() {
+        filters.clear();
+        filterRegistrations.clear();
+        columnFilters.clear();
+    }
+    
+    /**
+     * gets filter field component for the Column
+     * @param key grid column
+     * @return filter field component
+     */
+    public Component getFilterComponent(Grid.Column<?,?> key) {
+        Filter<?> filter = columnFilters.get(key);
+        if (filter != null && filter instanceof FilterComponentWrapper ) {
+            return ((FilterComponentWrapper<?,?>) filter).getWrappedComponent();
+        }
+        return null; 
+    }
+
+    /**
+     * Returns the filter generator if any
+     * @return
+     */
+    public FilterGenerator getFilterGenerator() {
+        return filterGenerator;
+    }
+
+    /**
+     * Sets the filter generator
+     * @param filterGenerator
+     */
+    public void setFilterGenerator(FilterGenerator filterGenerator) {
+        this.filterGenerator = filterGenerator;
+    }
+
+    /**
+     * Returns the filter decorator if any
+     * @return
+     */
+    public FilterDecorator getFilterDecorator() {
+        return filterDecorator;
+    }
+
+    /**
+     * Sets the filter decorator
+     * @param filterGenerator
+     */
+    public void setFilterDecorator(FilterDecorator filterDecorator) {
+        this.filterDecorator = filterDecorator;
+    }
+    
+    /**
+     * Generates filters and components automatically. For this to work, column value types must be known, that is,
+     * either set explicitly, or detected from the bean type.
+     */
+    public void generateFilters() {
+        new FilterFieldGenerator(this).initializeFilterFields();
+    }
+    
+    /**
+     * Returns original list data provider
+     * @return
+     */
+    public ListDataProvider<T> getListDataProvider() {
+        return listDataProvider;
+    }
+    
 }
